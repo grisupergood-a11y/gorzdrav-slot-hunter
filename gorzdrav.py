@@ -24,7 +24,7 @@
   ~/.config/gorzdrav/creds.json   {"patients": {"me": {"lastName","firstName","middleName","birthdate":"YYYY-MM-DD"}},
                                    "telegram_bot_token", "telegram_chat_id"}   (600)
   ~/.config/gorzdrav/goals.json   [{name, patient, lpu, speciality, doctors[], dates[from,to], weekdays[1..7],
-                                    time[from,to], earlier_than, min_lead_minutes, mode: dry|live}]
+                                    time[from,to], earlier_than, min_lead_minutes, mode: dry}]   (боевой режим — только командой arm)
   ~/.local/state/gorzdrav/        state.json, hunt.log, lock;  ~/.config/gorzdrav/STOP — рубильник
 """
 
@@ -202,6 +202,7 @@ def log(line):
     STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     with LOG.open("a", encoding="utf-8") as f:
         f.write(f"{now().isoformat()} {line}\n")
+    os.chmod(LOG, 0o600)
 
 
 # ---------- чтение ----------
@@ -242,7 +243,7 @@ def upcoming(api, lpu, pid):
 # ---------- запись ----------
 
 def create_appointment(api, lpu, pid, who, slot):
-    """Единственный пишущий запрос. Никогда не повторяется (п. 5.6 плана)."""
+    """Единственный пишущий запрос. Никогда не повторяется."""
     p = patient_of(who)
     body = {
         "esiaId": None, "lpuId": int(lpu), "patientId": pid, "appointmentId": str(slot["id"]),
@@ -259,12 +260,12 @@ def create_appointment(api, lpu, pid, who, slot):
 
 
 def create_ok(j):
-    """Боевой тест 19.11.2026: успешная запись = {success: true, errorCode: 0}, поле result отсутствует."""
+    """Успешная запись = {success: true, errorCode: 0}; поля result в ответе нет."""
     return bool(j.get("success")) and not j.get("errorCode")
 
 
 def appt_spec_id(a):
-    """Поле специальности в ответе GET appointments (снято живьём 19.11.2026)."""
+    """Id специальности в ответе GET appointments."""
     return str((a.get("specialityRendingConsultation") or {}).get("id") or "")
 
 
@@ -339,6 +340,10 @@ def run_goal(api, g, gs, st, dry):
     if not api.token:
         find_patient(api, lpu, who)   # нужен свежий token из ответа поиска
     mine = upcoming(api, lpu, pid)
+    if any(not appt_spec_id(a) for a in mine):
+        gs["mode"] = "stopped"
+        tg(f"⏹ {g['name']}: не разобрал список записей пациента (формат ответа изменился?). Цель остановлена, запись не делал.")
+        return "формат записей не распознан — стоп"
     for a in mine:
         if appt_spec_id(a) == str(spec) and not g.get("allow_second"):
             gs["mode"] = "stopped"
@@ -390,7 +395,7 @@ def cmd_hunt(a):
         if a.goal and g["name"] != a.goal:
             continue
         gs = st.setdefault("goals", {}).setdefault(g["name"], {})
-        mode = gs.get("mode") or g.get("mode", "dry")
+        mode = gs.get("mode") or "dry"   # live включает только arm; поле mode в goals.json запись не включает
         if mode in ("booked", "stopped", "unknown"):
             res[g["name"]] = mode
             continue
