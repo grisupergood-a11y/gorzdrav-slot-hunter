@@ -1,0 +1,5 @@
+[
+ {"name": "oculist", "patient": "me", "lpu": 1, "speciality": "92134153",
+  "doctors": [], "dates": ["2026-11-20", "2026-12-10"], "weekdays": [1, 2, 3, 4, 5], "time": ["09:00", "18:00"],
+  "earlier_than": null, "min_lead_minutes": 180, "mode": "dry"}
+]
